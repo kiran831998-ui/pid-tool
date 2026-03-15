@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P&ID Line Number Extractor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f5f4f0;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: #e0ddd4;
+    --border2: #ccc9be;
+    --text: #1a1916;
+    --text2: #6b6860;
+    --text3: #9b9890;
+    --blue: #185FA5;
+    --blue-dark: #0C447C;
+    --blue-light: #E6F1FB;
+    --blue-text: #0C447C;
+    --green: #3B6D11;
+    --green-bg: #EAF3DE;
+    --red: #A32D2D;
+    --red-bg: #FCEBEB;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --font: 'Helvetica Neue', Arial, sans-serif;
+    --mono: 'Courier New', monospace;
+  }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .topbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 0 2rem; display: flex; align-items: center; justify-content: space-between;
+    height: 56px; position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; color: var(--text); }
+  .logo-icon {
+    width: 32px; height: 32px; background: var(--blue); border-radius: 7px;
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px;
+  }
+  .topbar-right { font-size: 12px; color: var(--text3); }
+
+  .main { max-width: 900px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+  .page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .page-sub { font-size: 14px; color: var(--text2); margin-bottom: 2rem; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.25rem; }
+  .card-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text3); margin-bottom: 1rem; }
+
+  .upload-zone {
+    border: 2px dashed var(--border2); border-radius: var(--radius);
+    padding: 3rem 2rem; text-align: center; cursor: pointer;
+    position: relative; transition: all 0.15s; background: var(--surface2);
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--blue); background: var(--blue-light); }
+  .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .up-icon { font-size: 40px; margin-bottom: 12px; display: block; }
+  .up-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .up-sub { font-size: 13px; color: var(--text2); }
+  .up-sub span { color: var(--blue); font-weight: 500; }
+  .file-info { display: none; margin-top: 1rem; padding: 10px 14px; background: var(--green-bg); color: var(--green); border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; }
+  .preview-wrap { display: none; margin-top: 1rem; text-align: center; }
+  .preview-wrap img { max-width: 100%; max-height: 280px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+
+  .settings-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .setting-group { display: flex; align-items: center; gap: 10px; }
+  .setting-label { font-size: 13px; font-weight: 600; color: var(--text2); }
+  .dpi-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .dpi-pill {
+    padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 500;
+    border: 1.5px solid var(--border2); background: var(--surface); color: var(--text2);
+    cursor: pointer; transition: all 0.1s;
+  }
+  .dpi-pill:hover { border-color: var(--blue); color: var(--blue); }
+  .dpi-pill.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .dpi-desc { font-size: 12px; color: var(--text3); }
+
+  .run-btn {
+    width: 100%; padding: 14px; background: var(--blue); color: #fff;
+    border: none; border-radius: var(--radius); font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: background 0.15s, transform 0.1s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .run-btn:hover { background: var(--blue-dark); }
+  .run-btn:active { transform: scale(0.995); }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .spinner { width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .status-msg { display: none; padding: 12px 16px; border-radius: var(--radius-sm); font-size: 13px; margin-bottom: 1.25rem; }
+  .status-msg.info { background: var(--blue-light); color: var(--blue-text); }
+  .status-msg.err  { background: var(--red-bg); color: var(--red); }
+  .status-msg.ok   { background: var(--green-bg); color: var(--green); }
+
+  .progress-wrap { display: none; margin-bottom: 1.25rem; }
+  .progress-label { font-size: 13px; color: var(--text2); margin-bottom: 6px; }
+  .progress-bar-bg { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
+  .progress-bar { height: 100%; background: var(--blue); border-radius: 99px; transition: width 0.3s; width: 0%; }
+
+  .results-section { display: none; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 1.25rem; }
+  .stat-card { background: var(--surface2); border-radius: var(--radius-sm); padding: 14px 16px; }
+  .stat-lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text3); margin-bottom: 4px; }
+  .stat-val { font-size: 26px; font-weight: 700; }
+
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 1rem; flex-wrap: wrap; }
+  .search-input {
+    flex: 1; min-width: 200px; padding: 8px 12px;
+    border: 1px solid var(--border2); border-radius: var(--radius-sm);
+    font-size: 14px; background: var(--surface); color: var(--text); outline: none;
+  }
+  .search-input:focus { border-color: var(--blue); }
+  .filter-sel { padding: 8px 12px; border: 1px solid var(--border2); border-radius: var(--radius-sm); font-size: 13px; background: var(--surface); color: var(--text); cursor: pointer; }
+  .icon-btn {
+    padding: 8px 14px; border: 1px solid var(--border2); border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 500; background: var(--surface); color: var(--text2);
+    cursor: pointer; transition: all 0.1s; white-space: nowrap;
+  }
+  .icon-btn:hover { background: var(--surface2); border-color: var(--blue); color: var(--blue); }
+
+  .table-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .table-scroll { overflow-x: auto; max-height: 480px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th {
+    background: var(--surface2); padding: 10px 14px; text-align: left;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text3); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 1; cursor: pointer; white-space: nowrap;
+  }
+  thead th:hover { color: var(--text2); }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafaf8; }
+  .col-num { color: var(--text3); font-size: 12px; width: 40px; }
+  .col-ln { font-family: var(--mono); font-weight: 600; font-size: 13px; }
+  .svc-badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; background: var(--blue-light); color: var(--blue-text); }
+  .col-muted { font-size: 13px; color: var(--text2); }
+  .col-spec { font-family: var(--mono); font-size: 12px; color: var(--text3); }
+  .empty-row td { text-align: center; padding: 3rem; color: var(--text3); font-size: 14px; }
+
+  .footer { text-align: center; font-size: 12px; color: var(--text3); margin-top: 3rem; padding-bottom: 2rem; }
+
+  @media (max-width: 600px) {
+    .topbar { padding: 0 1rem; }
+    .main { padding: 1.5rem 1rem; }
+    .page-title { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">⟁</div>
+    P&ID Line Extractor
+  </div>
+  <div class="topbar-right">Gujarat Refinery · VGO-HDT Revamp</div>
+</div>
+
+<div class="main">
+  <div class="page-title">P&ID Line Number Extractor</div>
+  <div class="page-sub">Upload a P&ID drawing — AI detects all piping line numbers automatically. Free to use.</div>
+
+  <div class="card">
+    <div class="card-title">Step 1 — Upload P&ID Image</div>
+    <div class="upload-zone" id="zone">
+      <input type="file" id="fileIn" accept="image/png,image/jpeg,image/jpg,image/webp,image/tiff,image/bmp">
+      <span class="up-icon">📐</span>
+      <div class="up-title">Drop your P&ID image here</div>
+      <div class="up-sub">or <span>click to browse</span> &nbsp;·&nbsp; PNG, JPG, TIFF, BMP supported</div>
+    </div>
+    <div class="file-info" id="fileInfo"></div>
+    <div class="preview-wrap" id="previewWrap"><img id="prevImg" src="" alt="preview"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Step 2 — Quality Setting</div>
+    <div class="settings-row">
+      <div class="setting-group">
+        <span class="setting-label">Resolution:</span>
+        <div class="dpi-pills" id="dpiPills">
+          <button class="dpi-pill" data-dpi="150" data-desc="Fastest · may miss small text">Fast</button>
+          <button class="dpi-pill active" data-dpi="300" data-desc="Recommended for most P&IDs">Standard</button>
+          <button class="dpi-pill" data-dpi="400" data-desc="Better accuracy · slightly slower">High</button>
+          <button class="dpi-pill" data-dpi="600" data-desc="Maximum accuracy · best for small text">Max</button>
+        </div>
+      </div>
+      <div class="dpi-desc" id="dpiDesc">Recommended for most P&IDs</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Step 3 — Extract</div>
+    <button class="run-btn" id="runBtn" disabled>
+      <div class="spinner" id="spin"></div>
+      <span id="runTxt">Extract Line Numbers</span>
+    </button>
+  </div>
+
+  <div class="status-msg" id="statusMsg"></div>
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-label" id="progressLbl">Analysing drawing...</div>
+    <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+  </div>
+
+  <div class="results-section" id="resultsSection">
+    <div class="card">
+      <div class="card-title">Results</div>
+      <div class="stats-grid" id="statsGrid"></div>
+      <div class="toolbar">
+        <input class="search-input" id="searchInput" type="text" placeholder="Search line numbers...">
+        <select class="filter-sel" id="filterSvc"><option value="">All services</option></select>
+        <button class="icon-btn" id="dlCsvBtn">⬇ CSV</button>
+        <button class="icon-btn" id="dlXlsBtn">⬇ Excel</button>
+        <button class="icon-btn" id="clearBtn">✕ Clear</button>
+      </div>
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-num">#</th>
+                <th data-sort="ln">Line Number ↕</th>
+                <th data-sort="svc">Service ↕</th>
+                <th data-sort="unit">Unit ↕</th>
+                <th data-sort="seq">Sequence ↕</th>
+                <th data-sort="spec">Spec</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">P&ID Line Number Extractor &nbsp;·&nbsp; Powered by Google Gemini AI (Free) &nbsp;·&nbsp; Gujarat Refinery Revamp Project</div>
+</div>
+
+<script>
+const GEMINI_API_KEY = 'AIzaSyB_7k-A87-UOGrrnV0irn4t9yiqi2sXFDQ';
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+let allLines = [], selectedDpi = 300, currentFile = null, sortKey = 'ln', sortAsc = true;
+
+document.querySelectorAll('.dpi-pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.dpi-pill').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedDpi = parseInt(btn.dataset.dpi);
+    document.getElementById('dpiDesc').textContent = btn.dataset.desc;
+  });
+});
+
+const zone = document.getElementById('zone');
+const fileIn = document.getElementById('fileIn');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+fileIn.addEventListener('change', () => { if (fileIn.files[0]) handleFile(fileIn.files[0]); });
+
+function handleFile(f) {
+  currentFile = f;
+  const url = URL.createObjectURL(f);
+  document.getElementById('prevImg').src = url;
+  document.getElementById('previewWrap').style.display = 'block';
+  const fi = document.getElementById('fileInfo');
+  fi.textContent = '✓  ' + f.name + '  (' + (f.size/1024/1024).toFixed(1) + ' MB)';
+  fi.style.display = 'block';
+  document.getElementById('runBtn').disabled = false;
+  document.getElementById('resultsSection').style.display = 'none';
+  showStatus('', '');
+}
+
+function showStatus(msg, type) {
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.className = 'status-msg ' + type;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function setProgress(pct, label) {
+  const wrap = document.getElementById('progressWrap');
+  wrap.style.display = pct >= 0 ? 'block' : 'none';
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressLbl').textContent = label;
+}
+
+function setLoading(on) {
+  document.getElementById('runBtn').disabled = on;
+  document.getElementById('spin').style.display = on ? 'block' : 'none';
+  document.getElementById('runTxt').textContent = on ? 'Analysing drawing...' : 'Extract Line Numbers';
+}
+
+function toBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+function parseLN(ln) {
+  const parts = ln.split('-');
+  return { ln, size: parts[0]||'', svc: parts[1]||'', unit: parts[2]||'', seq: parts[3]||'', spec: parts.slice(4).join('-')||'' };
+}
+
+document.getElementById('runBtn').addEventListener('click', async () => {
+  if (!currentFile) return;
+  setLoading(true);
+  showStatus('', '');
+  setProgress(10, 'Reading image...');
+
+  try {
+    const b64 = await toBase64(currentFile);
+    const mime = currentFile.type || 'image/png';
+    setProgress(35, 'Sending to Gemini AI...');
+
+    const prompt = `You are a P&ID (Piping and Instrumentation Diagram) expert at an oil refinery.
+
+Carefully examine this engineering drawing and extract EVERY piping line number visible anywhere in the image.
+
+Line numbers follow this format:
+  <size>"-<SERVICE>-<unit>-<sequence>-<spec>
+
+Examples:
+  8"-CBDL-2093-0602-B1A1H
+  3/4"-P-2093-0613-B1A1
+  1"-P-2093-0640-B1A1H
+  10"-P-2093-0603-B2A1
+  1%"-P-2093-0608-B1A1
+
+Instructions:
+- Look at ALL text: horizontal, vertical, diagonal, any orientation
+- Look along pipe lines, in line lists on right side, in detail callouts, everywhere
+- Image quality hint: ${selectedDpi} DPI
+- Do NOT include: instrument tags (FIC-0602, PSV-0751), equipment numbers, valve tags, drawing numbers
+- Only include lines matching <size>-<SERVICE>-<digits>-<digits> pattern
+
+Return ONLY the line numbers, one per line. No explanations, no headers, no bullets, no numbers. Just raw line numbers.`;
+
+    setProgress(55, 'AI is reading the drawing...');
+
+    const resp = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { inline_data: { mime_type: mime, data: b64 } },
+          { text: prompt }
+        ]}],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 4000 }
+      })
+    });
+
+    setProgress(80, 'Processing results...');
+    const data = await resp.json();
+
+    if (data.error) throw new Error(data.error.message);
+
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    const lines = raw.split('\n')
+      .map(l => l.trim().replace(/^[-•*\d.):\s]+/, '').trim().toUpperCase())
+      .filter(l => /^\d{1,2}.*?[-–]([A-Z]{1,6})[-–]\d{3,6}[-–]\d{3,6}/i.test(l))
+      .map(l => l.replace(/[–—]/g, '-'))
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .sort();
+
+    setProgress(100, 'Done!');
+    setTimeout(() => setProgress(-1, ''), 800);
+
+    if (!lines.length) {
+      showStatus('No line numbers found. Try a clearer image or higher quality setting.', 'err');
+      setLoading(false);
+      return;
+    }
+
+    allLines = lines;
+    renderAll();
+    document.getElementById('resultsSection').style.display = 'block';
+    showStatus('Found ' + lines.length + ' line numbers successfully.', 'ok');
+
+  } catch(e) {
+    showStatus('Error: ' + e.message, 'err');
+    setProgress(-1, '');
+  }
+  setLoading(false);
+});
+
+function renderAll() {
+  const parsed = allLines.map(parseLN);
+  const svcs = new Set(parsed.map(p => p.svc));
+  const units = new Set(parsed.map(p => p.unit));
+  document.getElementById('statsGrid').innerHTML = [
+    { label: 'Line Numbers', val: allLines.length },
+    { label: 'Services', val: svcs.size },
+    { label: 'Units', val: units.size },
+    { label: 'DPI Setting', val: selectedDpi },
+  ].map(s => `<div class="stat-card"><div class="stat-lbl">${s.label}</div><div class="stat-val">${s.val}</div></div>`).join('');
+
+  const sel = document.getElementById('filterSvc');
+  const svcList = [...svcs].sort();
+  sel.innerHTML = '<option value="">All services</option>' + svcList.map(s => `<option value="${s}">${s}</option>`).join('');
+  renderTable();
+}
+
+function renderTable() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const fsvc = document.getElementById('filterSvc').value;
+  let data = allLines.map(parseLN);
+  if (q)    data = data.filter(p => p.ln.toLowerCase().includes(q));
+  if (fsvc) data = data.filter(p => p.svc === fsvc);
+  data.sort((a,b) => {
+    const av = a[sortKey]||'', bv = b[sortKey]||'';
+    return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+  const tbody = document.getElementById('tbody');
+  if (!data.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No results match your filter</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map((p,i) => `<tr>
+    <td class="col-num">${i+1}</td>
+    <td class="col-ln">${p.ln}</td>
+    <td><span class="svc-badge">${p.svc}</span></td>
+    <td class="col-muted">${p.unit}</td>
+    <td class="col-muted">${p.seq}</td>
+    <td class="col-spec">${p.spec}</td>
+  </tr>`).join('');
+}
+
+document.querySelectorAll('thead th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    if (sortKey === k) sortAsc = !sortAsc; else { sortKey = k; sortAsc = true; }
+    renderTable();
+  });
+});
+
+document.getElementById('searchInput').addEventListener('input', renderTable);
+document.getElementById('filterSvc').addEventListener('change', renderTable);
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  allLines = [];
+  document.getElementById('resultsSection').style.display = 'none';
+  document.getElementById('previewWrap').style.display = 'none';
+  document.getElementById('fileInfo').style.display = 'none';
+  document.getElementById('runBtn').disabled = true;
+  currentFile = null;
+  showStatus('', '');
+});
+
+document.getElementById('dlCsvBtn').addEventListener('click', () => {
+  const rows = [['Line Number','Size','Service','Unit','Sequence','Spec']];
+  allLines.map(parseLN).forEach(p => rows.push([p.ln, p.size, p.svc, p.unit, p.seq, p.spec]));
+  const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  dl('line_numbers.csv', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv));
+});
+
+document.getElementById('dlXlsBtn').addEventListener('click', () => {
+  const parsed = allLines.map(parseLN);
+  let html = `<html><head><meta charset="UTF-8"></head><body><table border="1" style="border-collapse:collapse">
+<tr style="background:#1F4E79;color:#fff;font-weight:bold"><th>Line Number</th><th>Size</th><th>Service</th><th>Unit</th><th>Sequence</th><th>Spec</th></tr>`;
+  parsed.forEach((p,i) => {
+    const bg = i%2===0 ? '#ffffff' : '#DCE6F1';
+    html += `<tr style="background:${bg}"><td>${p.ln}</td><td>${p.size}</td><td>${p.svc}</td><td>${p.unit}</td><td>${p.seq}</td><td>${p.spec}</td></tr>`;
+  });
+  html += '</table></body></html>';
+  dl('line_numbers.xls', 'data:application/vnd.ms-excel;charset=utf-8,' + encodeURIComponent(html));
+});
+
+function dl(filename, dataUrl) {
+  const a = document.createElement('a');
+  a.href = dataUrl; a.download = filename; a.click();
+}
+</script>
+</body>
+</html>
